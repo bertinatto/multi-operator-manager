@@ -165,6 +165,20 @@ func GetRequiredInputResourcesForResourceList(ctx context.Context, resourceList 
 	return instances.List(), errors.Join(errs...)
 }
 
+func getFilename(instance *unstructured.Unstructured, gvr schema.GroupVersionResource) string {
+	namespacedString := "REPLACE_ME"
+	if len(instance.GetNamespace()) > 0 {
+		namespacedString = "namespaces"
+	} else {
+		namespacedString = "cluster-scoped-resources"
+	}
+	group := gvr.Group
+	if len(group) == 0 {
+		group = "core"
+	}
+	return path.Join(namespacedString, instance.GetNamespace(), group, fmt.Sprintf("%s.yaml", gvr.Resource))
+}
+
 func getExactResource(ctx context.Context, dynamicClient dynamic.Interface, resourceReference ExactResourceID) (*Resource, error) {
 	gvr := schema.GroupVersionResource{Group: resourceReference.Group, Version: resourceReference.Version, Resource: resourceReference.Resource}
 	unstructuredInstance, err := dynamicClient.Resource(gvr).Namespace(resourceReference.Namespace).Get(ctx, resourceReference.Name, metav1.GetOptions{})
@@ -175,6 +189,7 @@ func getExactResource(ctx context.Context, dynamicClient dynamic.Interface, reso
 	resourceInstance := &Resource{
 		ResourceType: gvr,
 		Content:      unstructuredInstance,
+		Filename:     getFilename(unstructuredInstance, gvr),
 	}
 	return resourceInstance, nil
 }
@@ -206,6 +221,7 @@ func getResourcesByLabelSelector(ctx context.Context, dynamicClient dynamic.Inte
 		resourceInstance := &Resource{
 			ResourceType: gvr,
 			Content:      &item,
+			Filename:     getFilename(&item, gvr),
 		}
 		resources = append(resources, resourceInstance)
 	}
