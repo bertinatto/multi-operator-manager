@@ -4,12 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"path"
-	"path/filepath"
-	"strings"
 
 	"github.com/PaesslerAG/gval"
 	"github.com/PaesslerAG/jsonpath"
@@ -44,33 +41,6 @@ func WriteRequiredInputResourcesFromMustGather(ctx context.Context, inputResourc
 	return errors.Join(errs...)
 }
 
-func listUnnecessaryFilesInMustGather(mustGatherDir string, inputResources []*Resource) ([]string, error) {
-	mustGatherFilenames := sets.New[string]()
-	err := filepath.Walk(mustGatherDir, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if strings.HasSuffix(info.Name(), ".yaml") {
-			filename, err := filepath.Rel(mustGatherDir, filepath.Clean(path))
-			if err != nil {
-				return err
-			}
-			mustGatherFilenames.Insert(filename)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("error walking the path %q: %w", mustGatherDir, err)
-	}
-
-	intputResourcesFilenames := sets.New[string]()
-	for _, r := range inputResources {
-		intputResourcesFilenames.Insert(r.Filename)
-	}
-
-	return mustGatherFilenames.Difference(intputResourcesFilenames).UnsortedList(), nil
-}
-
 func GetRequiredInputResourcesFromMustGather(ctx context.Context, inputResources *InputResources, mustGatherDir string) ([]*Resource, error) {
 	dynamicClient, err := NewDynamicClientFromMustGather(mustGatherDir)
 	if err != nil {
@@ -82,13 +52,34 @@ func GetRequiredInputResourcesFromMustGather(ctx context.Context, inputResources
 		return nil, err
 	}
 
-	unnecessaryFiles, err := listUnnecessaryFilesInMustGather(mustGatherDir, pertinentUnstructureds)
+	inputDirResources, err := LenientResourcesFromDirRecursive(mustGatherDir)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(unnecessaryFiles) > 0 {
-		return nil, fmt.Errorf("unnecessary files found in %s: %v", mustGatherDir, strings.Join(unnecessaryFiles, ", "))
+	var instances []*Resource
+	for _, inputDirResource := range inputDirResources {
+		if !inputDirResource.Content.IsList() {
+			instances = append(instances, inputDirResource)
+			continue
+		}
+		list, err := inputDirResource.Content.ToList()
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range list.Items {
+			singleResource := &Resource{
+				Filename:     inputDirResource.Filename,
+				ResourceType: inputDirResource.ResourceType,
+				Content:      &item,
+			}
+			instances = append(instances, singleResource)
+		}
+	}
+
+	differences := DifferenceOfResources(instances, pertinentUnstructureds)
+	if len(differences) > 0 {
+		return nil, fmt.Errorf("expected results mismatch %d times with actual results", len(differences))
 	}
 
 	return unstructuredToMustGatherFormat(pertinentUnstructureds)

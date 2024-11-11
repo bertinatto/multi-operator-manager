@@ -200,3 +200,38 @@ func (u *UniqueResourceSet) Insert(resources ...*Resource) {
 func (u *UniqueResourceSet) List() []*Resource {
 	return u.resources
 }
+
+// DifferenceOfResources returns a set of objects that are not in s2.
+// For example:
+// s1 = {a1, a2, a3}
+// s2 = {a1, a2, a4, a5}
+// s1.Difference(s2) = {a3}
+// s2.Difference(s1) = {a4, a5}
+// TODO: return the actual resources
+func DifferenceOfResources(lhses, rhses []*Resource) []string {
+	reasons := []string{}
+
+	for i := range lhses {
+		lhs := lhses[i]
+		rhs := findResourceByID(rhses, lhs.ID())
+
+		if rhs == nil {
+			reasons = append(reasons, fmt.Sprintf("%v missing in rhs", lhs.ID()))
+			continue
+		}
+		if !reflect.DeepEqual(lhs.Content, rhs.Content) {
+			reasons = append(reasons, fmt.Sprintf("%q does not match %q: %v", lhs.ID(), rhs.ID(), cmp.Diff(lhs.Content, rhs.Content)))
+		}
+	}
+
+	return reasons
+}
+
+func findResourceByID(in []*Resource, id string) *Resource {
+	for _, curr := range in {
+		if curr.ID() == id {
+			return curr
+		}
+	}
+	return nil
+}
