@@ -85,9 +85,21 @@ func ResourceFromFile(location, fileTrimPrefix string) (*Resource, error) {
 	retFilename := strings.TrimPrefix(location, fileTrimPrefix)
 	retFilename = strings.TrimPrefix(retFilename, "/")
 
+	var resourceName string
+	resourceContent := ret.(*unstructured.Unstructured)
+	if resourceContent.IsList() {
+		resourceName = strings.TrimSuffix(filepath.Base(location), ".yaml")
+	} else {
+		resourceName = filepath.Base(filepath.Dir(location))
+	}
 	return &Resource{
+		ResourceType: schema.GroupVersionResource{
+			Group:    ret.GetObjectKind().GroupVersionKind().Group,
+			Version:  ret.GetObjectKind().GroupVersionKind().Version,
+			Resource: resourceName,
+		},
 		Filename: retFilename,
-		Content:  ret.(*unstructured.Unstructured),
+		Content:  resourceContent,
 	}, nil
 }
 
